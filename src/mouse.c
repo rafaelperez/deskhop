@@ -32,21 +32,23 @@ uint16_t get_jump_threshold(output_t *output, enum screen_pos_e direction) {
 }
 
 /* Check if our upcoming mouse movement would result in having to switch outputs */
-enum screen_pos_e is_screen_switch_needed(output_t *output, int position, int offset) {
-    enum screen_pos_e direction = (offset < 0) ? LEFT : RIGHT;
-
-    /* No position offset implies no switch needed. */
-    if (offset == 0)
-        return NONE;
-
-    /* Local switches (virtual desktop changes) have no gap, only cross-output jumps use threshold */
-    uint16_t threshold = get_jump_threshold(output, direction);
-
-    if (position + offset < MIN_SCREEN_COORD - threshold)
+enum screen_pos_e is_screen_switch_needed(
+    output_t *output, int position_x, int offset_x, int position_y, int offset_y) {
+    if (offset_x < 0 &&
+        position_x + offset_x < MIN_SCREEN_COORD - get_jump_threshold(output, LEFT))
         return LEFT;
 
-    if (position + offset > MAX_SCREEN_COORD + threshold)
+    if (offset_x > 0 &&
+        position_x + offset_x > MAX_SCREEN_COORD + get_jump_threshold(output, RIGHT))
         return RIGHT;
+
+    if (offset_y < 0 &&
+        position_y + offset_y < MIN_SCREEN_COORD - get_jump_threshold(output, TOP))
+        return TOP;
+
+    if (offset_y > 0 &&
+        position_y + offset_y > MAX_SCREEN_COORD + get_jump_threshold(output, BOTTOM))
+        return BOTTOM;
 
     return NONE;
 }
@@ -133,7 +135,8 @@ enum screen_pos_e update_mouse_position(device_t *state, mouse_values_t *values)
     int offset_y = round(values->move_y * acceleration_factor * (current->speed_y >> reduce_speed));
 
     /* Determine if our upcoming movement would stay within the screen */
-    enum screen_pos_e switch_direction = is_screen_switch_needed(current, state->pointer_x, offset_x);
+    enum screen_pos_e switch_direction =
+        is_screen_switch_needed(current, state->pointer_x, offset_x, state->pointer_y, offset_y);
 
     /* Update movement */
     state->pointer_x = move_and_keep_on_screen(state->pointer_x, offset_x);

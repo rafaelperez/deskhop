@@ -19,6 +19,11 @@
 uint16_t get_jump_threshold(output_t *output, enum screen_pos_e direction) {
     const uint16_t NO_JUMP_THRESHOLD = 0;
 
+    /* Virtual desktops are only arranged horizontally, so a vertical switch
+       can never be local - it always means a jump to another pc */
+    if (direction == TOP || direction == BOTTOM)
+        return global_state.config.jump_threshold;
+
     /* If on non-main local screen, every possible switch is local */
     if (output->screen_index > 1)
         return NO_JUMP_THRESHOLD;
@@ -31,26 +36,31 @@ uint16_t get_jump_threshold(output_t *output, enum screen_pos_e direction) {
     return global_state.config.jump_threshold;
 }
 
-/* Check if our upcoming mouse movement would result in having to switch outputs */
-enum screen_pos_e is_screen_switch_needed(
-    output_t *output, int position_x, int offset_x, int position_y, int offset_y) {
-    if (offset_x < 0 &&
-        position_x + offset_x < MIN_SCREEN_COORD - get_jump_threshold(output, LEFT))
-        return LEFT;
+/* Check if moving 'position' by 'offset' crosses an edge of this axis by more
+   than the jump threshold. No position offset implies no switch needed.
+   Local switches (virtual desktop changes) have no gap, only cross-output
+   jumps use the threshold. */
+static enum screen_pos_e check_axis_switch(
+    output_t *output, int position, int offset, enum screen_pos_e dir_min, enum screen_pos_e dir_max) {
+    if (offset < 0 && position + offset < MIN_SCREEN_COORD - get_jump_threshold(output, dir_min))
+        return dir_min;
 
-    if (offset_x > 0 &&
-        position_x + offset_x > MAX_SCREEN_COORD + get_jump_threshold(output, RIGHT))
-        return RIGHT;
-
-    if (offset_y < 0 &&
-        position_y + offset_y < MIN_SCREEN_COORD - get_jump_threshold(output, TOP))
-        return TOP;
-
-    if (offset_y > 0 &&
-        position_y + offset_y > MAX_SCREEN_COORD + get_jump_threshold(output, BOTTOM))
-        return BOTTOM;
+    if (offset > 0 && position + offset > MAX_SCREEN_COORD + get_jump_threshold(output, dir_max))
+        return dir_max;
 
     return NONE;
+}
+
+/* Check if our upcoming mouse movement would result in having to switch outputs.
+   Horizontal edges take precedence over vertical ones. */
+enum screen_pos_e is_screen_switch_needed(
+    output_t *output, int position_x, int offset_x, int position_y, int offset_y) {
+    enum screen_pos_e direction = check_axis_switch(output, position_x, offset_x, LEFT, RIGHT);
+
+    if (direction == NONE)
+        direction = check_axis_switch(output, position_y, offset_y, TOP, BOTTOM);
+
+    return direction;
 }
 
 /* Move mouse coordinate 'position' by 'offset', but don't fall off the screen */
@@ -120,7 +130,7 @@ float calculate_mouse_acceleration_factor(int32_t offset_x, int32_t offset_y) {
     return lower->factor + interpolation_pos * (upper->factor - lower->factor);
 }
 
-/* Returns LEFT if need to jump left, RIGHT if right, NONE otherwise */
+/* Returns the direction of the screen edge our movement crosses, NONE if we stay on screen */
 enum screen_pos_e update_mouse_position(device_t *state, mouse_values_t *values) {
     output_t *current    = &state->config.output[state->active_output];
     uint8_t reduce_speed = 0;
@@ -202,14 +212,9 @@ void switch_to_another_pc(
     output_mouse_report(&hidden_pointer, state);
     set_active_output(state, output_to);
 
-    if (direction == LEFT || direction == RIGHT) {
-        state->pointer_x = (direction == LEFT) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
-        state->pointer_y = scale_y_coordinate(output->number, 1 - output->number, state);
-    }
-    else {
-        state->pointer_y = (direction == TOP) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
-        /* x scaling not currently supported */
-    }
+    /* do_screen_switch guarantees direction is LEFT or RIGHT here */
+    state->pointer_x = (direction == LEFT) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
+    state->pointer_y = scale_y_coordinate(output->number, 1 - output->number, state);
 }
 
 void switch_virtual_desktop_macos(device_t *state, int direction) {
@@ -282,8 +287,9 @@ void do_screen_switch(device_t *state, int direction) {
     if (state->switch_lock || state->gaming_mode)
         return;
 
-    /* ignore top and bottem switches to match the default left/right linear configuration */
-    if (direction == TOP || direction == BOTTOM)
+    /* Outputs are only arranged horizontally, so there is no neighbor to jump
+       to in a vertical direction (yet) */
+    if (direction != LEFT && direction != RIGHT)
         return;
 
     /* We want to jump in the direction of the other computer */
@@ -385,7 +391,7 @@ void process_mouse_report(uint8_t *raw_report, int len, uint8_t itf, hid_interfa
     /* Move the mouse, depending where the output is supposed to go */
     output_mouse_report(&report, state);
 
-    /* We use the mouse to switch outputs, if switch_direction is LEFT or RIGHT */
+    /* We use the mouse to switch outputs if the movement crossed a screen edge */
     if (switch_direction != NONE)
         do_screen_switch(state, switch_direction);
 }

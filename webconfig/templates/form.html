@@ -44,6 +44,15 @@
 
   </div>
 
+  {% elif item.get("elem") == "number" %}
+  <div class="clearfix">
+    {{ label(item, class='') }}
+    {{ input(item, type="number") }}
+      {% if item['values'].get('min') is not none %}min="{{ item['values'].min }}"{% endif %}
+      {% if item['values'].get('max') is not none %}max="{{ item['values'].max }}"{% endif %}
+    />
+  </div>
+
   {% elif item["values"] %}
     {{ label(item, class='') }}
     <select class="api" data-type="{{ item.type }}" data-key="{{ key }}" required>

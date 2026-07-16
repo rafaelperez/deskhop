@@ -16,23 +16,50 @@
 #define MACOS_SWITCH_MOVE_COUNT 5
 #define ACCEL_POINTS 7
 
+static enum screen_pos_e opposite_direction(enum screen_pos_e pos) {
+    switch (pos) {
+        case LEFT:
+            return RIGHT;
+        case RIGHT:
+            return LEFT;
+        case TOP:
+            return BOTTOM;
+        case BOTTOM:
+            return TOP;
+        default:
+            return NONE;
+    }
+}
+
+/* Return the edge overshoot required before a switch fires. Local virtual-desktop
+   moves use 0; crossing to the other PC uses config.jump_threshold. Must stay
+   aligned with do_screen_switch (toward_other / toward_main desktop axis). */
 uint16_t get_jump_threshold(output_t *output, enum screen_pos_e direction) {
     const uint16_t NO_JUMP_THRESHOLD = 0;
+    enum screen_pos_e toward_other = opposite_direction(output->pos);
 
-    /* Virtual desktops are only arranged horizontally, so a vertical switch
-       can never be local - it always means a jump to another pc */
-    if (direction == TOP || direction == BOTTOM)
+    /* Leaving through the edge that faces the other computer is a cross-PC jump */
+    if (direction == toward_other)
         return global_state.config.jump_threshold;
 
-    /* If on non-main local screen, every possible switch is local */
+    /* Virtual desktops only exist on the horizontal axis */
+    if (direction != LEFT && direction != RIGHT)
+        return global_state.config.jump_threshold;
+
+    /* On non-main local screens, every horizontal switch is local */
     if (output->screen_index > 1)
         return NO_JUMP_THRESHOLD;
 
-    /* If on main screen but going away from the border, switch is local */
-    if (output->pos == direction && output->screen_index == 1)
+    /* Desktops extend away from the border with the other computer. When outputs
+       are stacked vertically there is no such border, so they extend to the right
+       (toward_main = LEFT) — same rule as do_screen_switch. */
+    enum screen_pos_e toward_main =
+        (toward_other == LEFT || toward_other == RIGHT) ? toward_other : LEFT;
+
+    /* On the main screen, moving away from toward_main is a local desktop switch */
+    if (direction != toward_main)
         return NO_JUMP_THRESHOLD;
 
-    /* ... in all other cases, switch is non-local (jump to another pc) */
     return global_state.config.jump_threshold;
 }
 
@@ -308,21 +335,6 @@ void switch_virtual_desktop(device_t *state, output_t *output, int new_index, in
 
     state->pointer_x       = (direction == RIGHT) ? MIN_SCREEN_COORD : MAX_SCREEN_COORD;
     output->screen_index = new_index;
-}
-
-static enum screen_pos_e opposite_direction(enum screen_pos_e pos) {
-    switch (pos) {
-        case LEFT:
-            return RIGHT;
-        case RIGHT:
-            return LEFT;
-        case TOP:
-            return BOTTOM;
-        case BOTTOM:
-            return TOP;
-        default:
-            return NONE;
-    }
 }
 
 /*                               BORDER

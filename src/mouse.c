@@ -199,6 +199,38 @@ int16_t scale_y_coordinate(int screen_from, int screen_to, device_t *state) {
     return ((state->pointer_y - from->border.top) * MAX_SCREEN_COORD) / size_from;
 }
 
+/* Calculate and return X coordinate when moving vertically from screen out_from to
+   screen out_to, mirror of scale_y_coordinate for top/bottom switching */
+int16_t scale_x_coordinate(int screen_from, int screen_to, device_t *state) {
+    output_t *from = &state->config.output[screen_from];
+    output_t *to   = &state->config.output[screen_to];
+
+    int size_to   = to->vborder.right - to->vborder.left;
+    int size_from = from->vborder.right - from->vborder.left;
+
+    /* If sizes match, there is nothing to do */
+    if (size_from == size_to)
+        return state->pointer_x;
+
+    /* Moving from smaller ==> bigger screen
+       x_a = left + (((right - left) * x_b) / WIDTH) */
+
+    if (size_from > size_to) {
+        return to->vborder.left + ((size_to * state->pointer_x) / MAX_SCREEN_COORD);
+    }
+
+    /* Moving from bigger ==> smaller screen
+       x_b = ((x_a - left) * WIDTH) / (right - left) */
+
+    if (state->pointer_x < from->vborder.left)
+        return MIN_SCREEN_COORD;
+
+    if (state->pointer_x > from->vborder.right)
+        return MAX_SCREEN_COORD;
+
+    return ((state->pointer_x - from->vborder.left) * MAX_SCREEN_COORD) / size_from;
+}
+
 void switch_to_another_pc(
     device_t *state, output_t *output, int output_to, int direction) {
     uint8_t *mouse_park_pos = &state->config.output[state->active_output].mouse_park_pos;
@@ -212,9 +244,15 @@ void switch_to_another_pc(
     output_mouse_report(&hidden_pointer, state);
     set_active_output(state, output_to);
 
-    /* do_screen_switch guarantees direction is LEFT or RIGHT here */
-    state->pointer_x = (direction == LEFT) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
-    state->pointer_y = scale_y_coordinate(output->number, 1 - output->number, state);
+    /* Enter the new screen at the edge opposite to the one we left through */
+    if (direction == LEFT || direction == RIGHT) {
+        state->pointer_x = (direction == LEFT) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
+        state->pointer_y = scale_y_coordinate(output->number, 1 - output->number, state);
+    }
+    else {
+        state->pointer_y = (direction == TOP) ? MAX_SCREEN_COORD : MIN_SCREEN_COORD;
+        state->pointer_x = scale_x_coordinate(output->number, 1 - output->number, state);
+    }
 }
 
 void switch_virtual_desktop_macos(device_t *state, int direction) {
@@ -272,6 +310,21 @@ void switch_virtual_desktop(device_t *state, output_t *output, int new_index, in
     output->screen_index = new_index;
 }
 
+static enum screen_pos_e opposite_direction(enum screen_pos_e pos) {
+    switch (pos) {
+        case LEFT:
+            return RIGHT;
+        case RIGHT:
+            return LEFT;
+        case TOP:
+            return BOTTOM;
+        case BOTTOM:
+            return TOP;
+        default:
+            return NONE;
+    }
+}
+
 /*                               BORDER
                                    |
        .---------.    .---------.  |  .---------.    .---------.    .---------.
@@ -283,30 +336,40 @@ void switch_virtual_desktop(device_t *state, output_t *output, int new_index, in
 void do_screen_switch(device_t *state, int direction) {
     output_t *output = &state->config.output[state->active_output];
 
+    /* The other computer sits on the opposite side of our own position */
+    enum screen_pos_e toward_other = opposite_direction(output->pos);
+
     /* No switching allowed if explicitly disabled or in gaming mode */
     if (state->switch_lock || state->gaming_mode)
         return;
 
-    /* Outputs are only arranged horizontally, so there is no neighbor to jump
-       to in a vertical direction (yet) */
+    /* We are at the border -> switch outputs */
+    if (direction == toward_other && output->screen_index == 1) {
+        /* No switching allowed if mouse button is held. Should only apply to the border! */
+        if (state->mouse_buttons)
+            return;
+
+        switch_to_another_pc(state, output, 1 - state->active_output, direction);
+        return;
+    }
+
+    /* Virtual desktops are only arranged horizontally, so there is nowhere
+       to go vertically except to the other computer, handled above */
     if (direction != LEFT && direction != RIGHT)
         return;
 
-    /* We want to jump in the direction of the other computer */
-    if (output->pos != direction) {
-        if (output->screen_index == 1) { /* We are at the border -> switch outputs */
-            /* No switching allowed if mouse button is held. Should only apply to the border! */
-            if (state->mouse_buttons)
-                return;
+    /* Desktops extend away from the border with the other computer. When outputs are
+       stacked vertically there is no such border, so they extend to the right. */
+    enum screen_pos_e toward_main =
+        (toward_other == LEFT || toward_other == RIGHT) ? toward_other : LEFT;
 
-            switch_to_another_pc(state, output, 1 - state->active_output, direction);
-        }
-        /* If here, this output has multiple desktops and we are not on the main one */
-        else
+    /* We want to jump toward the main screen */
+    if (direction == toward_main) {
+        if (output->screen_index > 1)
             switch_virtual_desktop(state, output, output->screen_index - 1, direction);
     }
 
-    /* We want to jump away from the other computer, only possible if there is another screen to jump to */
+    /* We want to jump away from the main screen, only possible if there is another screen to jump to */
     else if (output->screen_index < output->screen_count)
         switch_virtual_desktop(state, output, output->screen_index + 1, direction);
 }

@@ -33,7 +33,9 @@ The device acts as an intermediary between your keyboard/mouse and the computer,
 
 To get the mouse cursor to magically jump across, the mouse hid report descriptor was changed to use absolute coordinates and then the mouse reports (that still come in relative movements) accumulate internally, keeping the accurate tally on the position.
 
-When you try to leave the monitor area in the direction of the other monitor, it keeps the Y coordinate and swaps the maximum X for a minimum X, then flips the outputs. This ensures that the cursor seamlessly appears at the same height on the other monitor, enhancing the perception of a smooth transition.
+When you try to leave the monitor area in the direction of the other monitor, it keeps the coordinate along the shared edge and enters on the opposite side of the other PC (for example LEFT↔RIGHT keeps Y and swaps min/max X; TOP↔BOTTOM keeps X and swaps min/max Y). That makes the cursor appear at a matching place on the other monitor.
+
+Outputs can sit side by side (Left/Right) or stacked (Top/Bottom). Set each output’s **Screen Position** in web config so the two sides are opposites — see [Vertical layouts](#vertical-layouts-topbottom) below.
 
 ![DeskHop Mouse Demo](img/deskhop-demo.gif)
 
@@ -57,7 +59,7 @@ It also remembers the LED state for each computer, so you can pick up exactly ho
 
 To avoid version mismatch and reported path issues when building, as well as to save you from having to download a large SDK, the project now bundles minimal pico sdk and tinyusb.
 
-On a Debian/Ubuntu systems, make sure to install these:
+On Debian/Ubuntu systems, make sure to install these:
 
 ```shell
 apt update
@@ -69,12 +71,44 @@ apt install \
     python3
 ```
 
-You should be able to build by running:
+### macOS
+
+Install CMake and Arm's complete bare-metal toolchain:
+
+```shell
+brew install cmake
+brew install --cask gcc-arm-embedded
+```
+
+Do not use Homebrew's `arm-none-eabi-gcc` formula for this project: it is built without the Newlib runtime files required by the Pico SDK, including `nosys.specs`.
+
+The cask installs the toolchain under `/Applications/ArmGNUToolchain`. Add its `bin` directory to `PATH` (adjust the version if a newer toolchain is installed):
+
+```shell
+export PATH="/Applications/ArmGNUToolchain/15.2.rel1/arm-none-eabi/bin:$PATH"
+```
+
+Verify that the complete toolchain is selected. The second command must print a full path ending in `nosys.specs`, rather than just `nosys.specs`:
+
+```shell
+which arm-none-eabi-gcc
+arm-none-eabi-gcc --print-file-name=nosys.specs
+```
+
+If CMake was previously configured with another compiler, remove the generated build directory before configuring again:
+
+```shell
+rm -rf build
+```
+
+You should then be able to build by running:
 
 ```shell
 cmake -S . -B build
 cmake --build build
 ```
+
+The resulting firmware image is `build/deskhop.uf2`.
 
 additionally, to rebuild web UI check webconfig/ and execute ```./render.py```, you'll need jinja2 installed.
 
@@ -252,13 +286,37 @@ Note: some keyboards don't send both shifts at the same time properly, that's wh
 
 ### Switch cursor height calibration
 
-This step is not required, but it can be handy if your screens are not perfectly aligned or differ in size. The objective is to have the mouse pointer come out at exactly the same height.
+This step is not required, but it can be handy if your screens are not perfectly aligned or differ in size. The objective is to have the mouse pointer come out at exactly the same height when switching **left/right**.
 
 ![Border height difference](img/border_top_s.png)
 
 Just park your mouse on the LARGER screen at the height of the smaller/lower screen (illustrated) and press ```Right Shift + F12 + Y```. Your LED (and caps lock) should flash in confirmation.
 
-Repeat for the bottom border (if it's above the larger screen's border). This will get saved to flash and it should keep this calibration value from now on.
+Repeat for the bottom border (if it's above the larger screen's border). This will get saved to flash and it should keep this calibration value from now on. The value is also synced to the other board over UART.
+
+The same idea for **width** (when PCs are stacked top/bottom) is configured as Border Left / Border Right in the web UI — there is no hotkey or automatic UART sync for those fields yet (see below).
+
+### Vertical layouts (Top/Bottom)
+
+By default DeskHop assumes the two computers sit next to each other (output A on the right, B on the left). You can instead stack them by setting **Screen Position** in web config:
+
+| Output A | Output B | Shared edge |
+|----------|----------|-------------|
+| Right | Left | Classic side-by-side (defaults) |
+| Left | Right | Side-by-side, roles flipped |
+| Bottom | Top | A below B |
+| Top | Bottom | A above B |
+
+**Positions must be complementary.** Both sides need a matching pair (Left↔Right or Top↔Bottom). If both are set to Top, or one is Top and the other Right, edge switching will feel broken or one-way — firmware does not auto-correct mismatched positions.
+
+**Unequal monitor sizes**
+
+- **Height** (side-by-side): use Border Top / Bottom, or the ```Right Shift + F12 + Y``` calibration hotkey (synced between boards).
+- **Width** (stacked top/bottom): set **Border Left** and **Border Right** on each output in web config (0–32767 coordinate space). These describe the horizontal overlap band when jumping vertically, the same way Top/Bottom describe the vertical band when jumping horizontally.
+
+Left/right borders are **web/API only** today: there is no calibration hotkey and they are **not** mirrored over UART like the Y borders. If you change them, set (and save) values on **both** boards so the peer does not keep full-width defaults.
+
+Equal-size stacked monitors can leave Left/Right at the defaults (full width) and still switch cleanly.
 
 ### Multiple screens per output
 
@@ -282,7 +340,7 @@ Starting with fw 0.6, an improved configuration mode is introduced. To configure
 
    ![Web Browser with URL](img/connect-dialog.png)
 
-1. Configure the options as you wish and click save to write to device.
+1. Configure the options as you wish and click save to write to device. For Top/Bottom layouts, set complementary Screen Positions on both outputs and, if needed, Border Left/Right (see [Vertical layouts](#vertical-layouts-topbottom)).
 
 1. Click "exit" in the menu to leave configuration mode for added safety.
 
@@ -388,6 +446,8 @@ There are several software alternatives you can use if that works in your partic
 - Super-modern mice with 300 buttons might see some buttons not work as expected.
 - NOTE: **Both computers need to be connected and provide power to the USB for this to work** (as each board gets powered by the computer it plugs into). Many desktops and laptops will provide power even when shut down nowadays. If you need to run with one board fully disconnected, you should be able to use a USB hub to plug both keyboard and mouse to a single port.
 - MacOS has issues with more than one screens, latest firmware offers an experimental workaround that fixes it.
+- **Config version bumps reset flash settings.** If the firmware’s config version does not match what is stored in flash (for example after adding new fields such as vertical borders), the device falls back to factory defaults — speeds, OS, screen counts, and calibrated borders are wiped. Re-enter web config after upgrading; there is no field-by-field migration yet.
+- **Top/Bottom layouts** need complementary Screen Positions on both outputs. Left/right border (width) calibration is web-only and not UART-synced; see [Vertical layouts](#vertical-layouts-topbottom).
 
 ## Progress
 

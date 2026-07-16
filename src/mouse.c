@@ -210,7 +210,9 @@ void output_mouse_report(mouse_report_t *report, device_t *state) {
     }
 }
 
-/* Calculate and return Y coordinate when moving from screen out_from to screen out_to */
+/* Calculate and return Y coordinate when moving from screen out_from to screen out_to.
+   "Size" is the configured border span, not physical monitor height: a smaller
+   physical screen typically uses a full [0, MAX] span. */
 int16_t scale_y_coordinate(int screen_from, int screen_to, device_t *state) {
     output_t *from = &state->config.output[screen_from];
     output_t *to   = &state->config.output[screen_to];
@@ -218,20 +220,22 @@ int16_t scale_y_coordinate(int screen_from, int screen_to, device_t *state) {
     int size_to   = to->border.bottom - to->border.top;
     int size_from = from->border.bottom - from->border.top;
 
+    /* Invalid or empty spans: leave coordinate unscaled (avoids div-by-zero) */
+    if (size_from <= 0 || size_to <= 0)
+        return state->pointer_y;
+
     /* If sizes match, there is nothing to do */
     if (size_from == size_to)
         return state->pointer_y;
 
-    /* Moving from smaller ==> bigger screen
-       y_a = top + (((bottom - top) * y_b) / HEIGHT) */
-
+    /* Full-span source → partial-span destination (enter larger monitor's overlap band)
+       y = top + ((size_to * y) / HEIGHT) */
     if (size_from > size_to) {
         return to->border.top + ((size_to * state->pointer_y) / MAX_SCREEN_COORD);
     }
 
-    /* Moving from bigger ==> smaller screen
-       y_b = ((y_a - top) * HEIGHT) / (bottom - top) */
-
+    /* Partial-span source → full-span destination
+       y = ((y - top) * HEIGHT) / size_from */
     if (state->pointer_y < from->border.top)
         return MIN_SCREEN_COORD;
 
@@ -250,20 +254,22 @@ int16_t scale_x_coordinate(int screen_from, int screen_to, device_t *state) {
     int size_to   = to->vborder.right - to->vborder.left;
     int size_from = from->vborder.right - from->vborder.left;
 
+    /* Invalid or empty spans: leave coordinate unscaled (avoids div-by-zero) */
+    if (size_from <= 0 || size_to <= 0)
+        return state->pointer_x;
+
     /* If sizes match, there is nothing to do */
     if (size_from == size_to)
         return state->pointer_x;
 
-    /* Moving from smaller ==> bigger screen
-       x_a = left + (((right - left) * x_b) / WIDTH) */
-
+    /* Full-span source → partial-span destination (enter larger monitor's overlap band)
+       x = left + ((size_to * x) / WIDTH) */
     if (size_from > size_to) {
         return to->vborder.left + ((size_to * state->pointer_x) / MAX_SCREEN_COORD);
     }
 
-    /* Moving from bigger ==> smaller screen
-       x_b = ((x_a - left) * WIDTH) / (right - left) */
-
+    /* Partial-span source → full-span destination
+       x = ((x - left) * WIDTH) / size_from */
     if (state->pointer_x < from->vborder.left)
         return MIN_SCREEN_COORD;
 

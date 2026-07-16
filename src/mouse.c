@@ -79,15 +79,30 @@ static enum screen_pos_e check_axis_switch(
 }
 
 /* Check if our upcoming mouse movement would result in having to switch outputs.
-   Horizontal edges take precedence over vertical ones. */
+   When both axes would switch on the same report (diagonal / corner motion),
+   prefer the edge that faces the other computer so TOP/BOTTOM dual-PC layouts
+   are not stolen by a horizontal virtual-desktop move. */
 enum screen_pos_e is_screen_switch_needed(
     output_t *output, int position_x, int offset_x, int position_y, int offset_y) {
-    enum screen_pos_e direction = check_axis_switch(output, position_x, offset_x, LEFT, RIGHT);
+    enum screen_pos_e horizontal = check_axis_switch(output, position_x, offset_x, LEFT, RIGHT);
+    enum screen_pos_e vertical   = check_axis_switch(output, position_y, offset_y, TOP, BOTTOM);
 
-    if (direction == NONE)
-        direction = check_axis_switch(output, position_y, offset_y, TOP, BOTTOM);
+    if (horizontal == NONE)
+        return vertical;
+    if (vertical == NONE)
+        return horizontal;
 
-    return direction;
+    /* Both axes crossed: prefer the true cross-PC edge on the main screen */
+    enum screen_pos_e toward_other = opposite_direction(output->pos);
+    if (output->screen_index == 1) {
+        if (horizontal == toward_other)
+            return horizontal;
+        if (vertical == toward_other)
+            return vertical;
+    }
+
+    /* Fallback: horizontal first (virtual desktops only exist on X) */
+    return horizontal;
 }
 
 /* Move mouse coordinate 'position' by 'offset', but don't fall off the screen */

@@ -23,6 +23,10 @@ const config_t default_config = {
                 .top = 0,
                 .bottom = MAX_SCREEN_COORD,
             },
+            .vborder = {
+                .left = 0,
+                .right = MAX_SCREEN_COORD,
+            },
             .screen_count = 1,
             .screen_index = 1,
             .os = OUTPUT_A_OS,
@@ -42,6 +46,10 @@ const config_t default_config = {
             .border = {
                 .top = 0,
                 .bottom = MAX_SCREEN_COORD,
+            },
+            .vborder = {
+                .left = 0,
+                .right = MAX_SCREEN_COORD,
             },
             .screen_count = 1,
             .screen_index = 1,

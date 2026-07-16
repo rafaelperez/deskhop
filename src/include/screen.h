@@ -30,6 +30,13 @@ typedef struct {
                 // height
 } border_size_t;
 
+/* Kept separate from border_size_t, which is synced verbatim over UART and
+   must stay within the 8-byte packet payload */
+typedef struct {
+    int left;  // When jumping vertically from a smaller to a bigger screen, go to THIS left coord
+    int right; // When jumping vertically from a smaller to a bigger screen, go to THIS right coord
+} border_width_t;
+
 typedef struct {
     uint8_t mode;
     uint8_t only_if_inactive;
@@ -44,8 +51,9 @@ typedef struct {
     int32_t speed_x;           // Mouse speed per output, in direction X
     int32_t speed_y;           // Mouse speed per output, in direction Y
     border_size_t border;      // Screen border size/offset to keep cursor at same height when switching
+    border_width_t vborder;    // Horizontal extent (left/right) to keep cursor aligned when switching vertically
     uint8_t os;                // Operating system on this output
-    uint8_t pos;               // Screen position on this output
+    uint8_t pos;               // Screen position on this output (LEFT/RIGHT/TOP/BOTTOM relative to the other)
     uint8_t mouse_park_pos;    // Where the mouse goes after switch
     screensaver_t screensaver; // Screensaver parameters for this output
 } output_t;

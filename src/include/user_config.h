@@ -69,6 +69,12 @@
 #define HOTKEY_MODIFIER  KEYBOARD_MODIFIER_LEFTCTRL
 #define HOTKEY_TOGGLE    HID_KEY_CAPS_LOCK
 
+/* Local patch (raf, 2026-10-24): a mouse button that toggles outputs, also in gaming mode.
+ * Bitmask over the HID button byte: 0x08 = button 4 (rear side / back),
+ * 0x10 = button 5 (front side / forward), 0x04 = middle. 0 disables the feature.
+ * The button is swallowed and never forwarded to the computers. */
+#define MOUSE_SWITCH_BUTTON_MASK 0x10
+
 /**================================================== *
  * ==============  Mouse Speed Factor  ============== *
  * ================================================== *

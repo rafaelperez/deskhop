@@ -357,6 +357,20 @@ void process_mouse_report(uint8_t *raw_report, int len, uint8_t itf, hid_interfa
     /* Interpret the mouse HID report, extract and save values we need. */
     extract_report_values(raw_report, len, state, &values, iface);
 
+#if MOUSE_SWITCH_BUTTON_MASK
+    /* Local patch: configured mouse button toggles the active output on press
+       (rising edge). Works regardless of gaming mode; only the switch lock blocks it.
+       The button bit is removed so the host never sees it. */
+    static bool switch_button_held = false;
+    bool switch_button_now = (values.buttons & MOUSE_SWITCH_BUTTON_MASK) != 0;
+    values.buttons &= ~MOUSE_SWITCH_BUTTON_MASK;
+
+    if (switch_button_now && !switch_button_held && !state->switch_lock)
+        set_active_output(state, 1 - state->active_output);
+
+    switch_button_held = switch_button_now;
+#endif
+
     /* If nothing changed, don't send a report. This prevents composite keyboards
        (e.g. QMK) that expose a mouse HID interface from generating spurious
        absolute position reports when they send zero-movement mouse reports during

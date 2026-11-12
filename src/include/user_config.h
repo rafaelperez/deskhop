@@ -66,7 +66,10 @@
  *
  * */
 
-#define HOTKEY_MODIFIER  KEYBOARD_MODIFIER_LEFTCTRL
+/* Local patch (raf, 2026-11-12): no modifier, Caps Lock alone toggles outputs.
+ * The key is swallowed (pass_to_os = false), so Caps Lock no longer reaches any
+ * computer. Restore KEYBOARD_MODIFIER_LEFTCTRL to get the upstream Ctrl+Caps combo. */
+#define HOTKEY_MODIFIER  0
 #define HOTKEY_TOGGLE    HID_KEY_CAPS_LOCK
 
 /* Local patch (raf, 2026-10-24): a mouse button that toggles outputs, also in gaming mode.
